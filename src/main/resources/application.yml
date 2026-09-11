@@ -1,0 +1,73 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: rate-limited-api-gateway
+
+  # Redis Reactive Configuration (Rate Limiting)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+  # R2DBC Non-blocking MySQL Configuration (Analytics Pipeline)
+  r2dbc:
+    url: r2dbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:gateway_analytics}?useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:rootpassword}
+    pool:
+      initial-size: 5
+      max-size: 20
+      max-idle-time: 30m
+
+  # Spring Cloud Gateway Route Configuration
+  cloud:
+    gateway:
+      routes:
+        # Authentication Service Route (Public)
+        - id: auth-service-route
+          uri: http://${AUTH_SERVICE_HOST:localhost}:8081
+          predicates:
+            - Path=/api/v1/auth/**
+
+        # User Service Route (Protected with JWT & Rate Limiting)
+        - id: user-service-route
+          uri: http://${USER_SERVICE_HOST:localhost}:8082
+          predicates:
+            - Path=/api/v1/users/**
+
+        # Order Service Route (Protected with JWT & Rate Limiting)
+        - id: order-service-route
+          uri: http://${ORDER_SERVICE_HOST:localhost}:8083
+          predicates:
+            - Path=/api/v1/orders/**
+
+# JWT Security Configuration
+jwt:
+  secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+  expiration-ms: 86400000 # 24 hours
+
+# Rate Limiter Tier Quotas (Requests per 60-second window)
+rate-limiter:
+  window-seconds: 60
+  tiers:
+    anonymous: 5
+    free: 20
+    premium: 100
+
+# Actuator & Prometheus Metrics Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
